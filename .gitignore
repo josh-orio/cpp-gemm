@@ -1,0 +1,12 @@
+# CMake Generated
+.cache
+build
+
+# Auto Generated Thing
+*.mod
+
+# Mac Thing
+.DS_Store
+
+# Pyfon
+*__pycache__
