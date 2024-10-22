@@ -260,6 +260,8 @@ int main() {
   // print_matrix(c_p, /*c_rows*/ 1, c_cols);
   std::fill(c_p, c_p + (c_rows * c_cols), 0);
 
+#ifdef NEON_GEMM_HPP
+
   start = std::chrono::high_resolution_clock::now();
   neon_gemm(a_p, b_p, c_p, c_rows, c_cols, depth);
   end = std::chrono::high_resolution_clock::now();
@@ -269,6 +271,8 @@ int main() {
   // std::cout << "MATRIX C" << std::endl;
   // print_matrix(c_p, /*c_rows*/ 1, c_cols);
   std::fill(c_p, c_p + (c_rows * c_cols), 0);
+
+#endif
 
   start = std::chrono::high_resolution_clock::now();
   ft_gemm(a_p, b_p, c_p, &c_rows, &c_cols, &depth);
