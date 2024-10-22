@@ -1,5 +1,5 @@
 import numpy as np
-import multiproccesing as mp
+import multiprocessing as mp
 import time
 
 dim = 512
