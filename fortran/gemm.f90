@@ -62,10 +62,6 @@ module sum_module
       end do
     end subroutine ft_ca_gemm
 
-
-
-
-
   !     for (int ii = 0; ii < c_rows; ii += block_size) {
   !   for (int jj = 0; jj < c_cols; jj += block_size) {
   !     for (int kk = 0; kk < depth; kk += block_size) {

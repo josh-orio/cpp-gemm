@@ -5,30 +5,28 @@
 #include <iostream>
 #include <random>
 
-// C/C++ GEMM ROUTINES
-#include "gemms.hpp"
-////
-
 // BLAS C++ API
-// #include "blas.hh"
+#include <cblas.h>
+////
+
+// C/C++ GEMM ROUTINES
+#include "cxx.hpp"
+////
+
+// ARM NEON GEMM ROUTINES
 #ifdef __APPLE__
-#include <vecLib/vecLib.h> /* for some reason this file has sgemm_() ?? */
+#include "neon.hpp"
 #endif
 ////
 
-// ARM NEON INSTRUCTIONS & GEMM ROUTINE
-#ifdef __APPLE__
-#include "n_gemm.hpp"
-#include <arm_neon.h>
-#endif
-////
-
+// FORTRAN GEMM ROUTINES
 extern "C" {
 void ft_gemm(float *a, float *b, float *c, int *c_rows, int *c_cols,
              int *depth);
 void ft_ca_gemm(float *a, float *b, float *c, int *c_rows, int *c_cols,
                 int *depth, int *block_size);
 }
+////
 
 // RANDOM NUMBER GENERATOR
 std::random_device rd;
@@ -50,154 +48,18 @@ void print_matrix(float *a, int rows, int cols) {
 }
 ////
 
-// CACHE AWARE GEMM
-void ca_gemm(float *a, float *b, float *c, uint c_rows, uint c_cols, uint depth,
-             uint block_size) {
-  // int n = depth;
-
-  // ZERO OUT THE RETURN ARRAY
-  memset(c, 0, c_rows * c_cols * sizeof(float));
-
-  // Iterate over the blocks of the matrices
-  for (int i = 0; i < c_rows; i += block_size) {
-    for (int ii = 0; ii < c_cols; ii += block_size) {
-      for (int iii = 0; iii < depth; iii += block_size) {
-
-        // Multiply the blocks
-        for (int iv = i; iv < std::min(i + block_size, c_rows); ++iv) {
-          for (int v = ii; v < std::min(ii + block_size, c_cols); ++v) {
-            double sum = 0.0;
-            for (int vi = iii; vi < std::min(iii + block_size, depth); ++vi) {
-              sum += a[(iv * depth) + vi] * b[(vi * c_cols) + v];
-            }
-            c[(iv * c_cols) + v] += sum;
-
-            // unopt implem.
-            // c[(i * c_cols) + ii] += a[(i * depth) + iii] * b[(iii * c_cols) +
-            // ii];
-          }
-        }
-      }
-    }
-  }
-
-  // print_matrix(c, c_rows, c_cols);
-}
-////
-
-// CACHE AWARE GEMM
-void ca_gemm_c(float *a, float *b, float *c, uint c_rows, uint c_cols,
-               uint depth, uint block_size) {
-  // int n = depth;
-
-  // ZERO OUT THE RETURN ARRAY
-  memset(c, 0, c_rows * c_cols * sizeof(float));
-
-  for (int ii = 0; ii < c_rows; ii += block_size) {
-    for (int jj = 0; jj < c_cols; jj += block_size) {
-      for (int kk = 0; kk < depth; kk += block_size) {
-        // Multiply block A[ii:ii+BLOCK_SIZE, kk:kk+BLOCK_SIZE]
-        //          by block B[kk:kk+BLOCK_SIZE, jj:jj+BLOCK_SIZE]
-        //          and accumulate into block C[ii:ii+BLOCK_SIZE,
-        //          jj:jj+BLOCK_SIZE]
-        for (int i = ii; i < ii + block_size && i < c_rows; i++) {
-          for (int j = jj; j < jj + block_size && j < c_cols; j++) {
-            double sum = c[(i * c_rows) + j]; // Initial value of C(i, j)
-            for (int k = kk; k < kk + block_size && k < depth; k++) {
-              sum += a[(i * c_rows) + k] * b[(k * c_cols) + j];
-            }
-            c[(i * c_rows) + j] = sum; // Update C(i, j)
-          }
-        }
-      }
-    }
-  }
-}
-////
-
-// CACHE AWARE GEMM
-void ca_gemm_c2(float *a, float *b, float *c, uint c_rows, uint c_cols,
-                uint depth, uint block_size) {
-  // int n = depth;
-
-  // ZERO OUT THE RETURN ARRAY
-  memset(c, 0, c_rows * c_cols * sizeof(float));
-
-  for (int ii = 0; ii < c_rows; ii += block_size) {
-    for (int jj = 0; jj < c_cols; jj += block_size) {
-      for (int kk = 0; kk < depth; kk += block_size) {
-        // Multiply block A[ii:ii+BLOCK_SIZE, kk:kk+BLOCK_SIZE]
-        //          by block B[kk:kk+BLOCK_SIZE, jj:jj+BLOCK_SIZE]
-        //          and accumulate into block C[ii:ii+BLOCK_SIZE,
-        //          jj:jj+BLOCK_SIZE]
-        for (int i = ii; i < std::min(ii + block_size, c_rows); i++) {
-          for (int j = jj; j < std::min(jj + block_size, c_cols); j++) {
-            double sum = c[(i * c_rows) + j]; // Initial value of C(i, j)
-            for (int k = kk; k < std::min(kk + block_size, depth); k++) {
-              sum += a[(i * c_rows) + k] * b[(k * c_cols) + j];
-            }
-            c[(i * c_rows) + j] = sum; // Update C(i, j)
-          }
-        }
-      }
-    }
-  }
-}
-////
-
-// CACHE AWARE GEMM
-void ca_gemm_c3(float *a, float *b, float *c, uint c_rows, uint c_cols,
-                uint depth, uint block_size) {
-  // int n = depth;
-
-  // ZERO OUT THE RETURN ARRAY
-  memset(c, 0, c_rows * c_cols * sizeof(float));
-
-  for (int ii = 0; ii < c_rows; ii += block_size) {
-    for (int jj = 0; jj < c_cols; jj += block_size) {
-      for (int kk = 0; kk < depth; kk += block_size) {
-        // Multiply block A[ii:ii+BLOCK_SIZE, kk:kk+BLOCK_SIZE]
-        //          by block B[kk:kk+BLOCK_SIZE, jj:jj+BLOCK_SIZE]
-        //          and accumulate into block C[ii:ii+BLOCK_SIZE,
-        //          jj:jj+BLOCK_SIZE]
-        for (int i = ii; i < std::min(ii + block_size, c_rows); i++) {
-          for (int j = jj; j < std::min(jj + block_size, c_cols); j++) {
-            double sum = c[(i * c_rows) + j]; // Initial value of C(i, j)
-            for (int k = kk; k < std::min(kk + block_size, depth); k++) {
-              sum += a[(i * c_rows) + k] * b[(k * c_cols) + j];
-            }
-            c[(i * c_rows) + j] = sum; // Update C(i, j)
-          }
-        }
-      }
-    }
-  }
-}
-////
-
 int main() {
-  std::system("clear");
-  std::system("python3 ../np.py");
+  // std::system("clear");
+  // std::system("python3 ../np.py");
 
-  int dim = 512;
-  // dim = 4;
-
+  int dim = 2048;
   int c_rows = dim, c_cols = dim, depth = dim;
 
   float *a_p = new float[depth * c_rows];
   float *b_p = new float[c_cols * depth];
   float *c_p = new float[c_cols * c_rows];
 
-  long flops = c_rows * c_cols * depth *
-               2; /* flops used for one full matmul (1x mul, 1x add)*/
-
-  // timing counter
-  double duration = 0;
-
-  auto start = std::chrono::high_resolution_clock::now(),
-       end = std::chrono::high_resolution_clock::now();
-
-  // load a and b with random values
+  // load a and b matrices with random values
   std::generate(a_p, a_p + (depth * c_rows), rng);
   std::generate(b_p, b_p + (c_cols * depth), rng);
 
@@ -207,6 +69,16 @@ int main() {
   // std::cout << "MATRIX B" << std::endl;
   // print_matrix(b_p, depth, c_cols);
 
+  // timing counter
+  double duration = 0;
+
+  auto start = std::chrono::high_resolution_clock::now(),
+       end = std::chrono::high_resolution_clock::now();
+
+  long flops = (long)c_rows * (long)c_cols * (long)depth *
+               2; /* flops used for one full matmul (1x mul, 1x add)*/
+                  // std::cout << flops << std::endl;
+
   start = std::chrono::high_resolution_clock::now();
   gemm(a_p, depth, c_rows, b_p, c_cols, depth, c_p);
   end = std::chrono::high_resolution_clock::now();
@@ -215,8 +87,9 @@ int main() {
   std::cout << std::format("GFLOPS: {} (Unoptimized)", (flops / 1e9) / duration)
             << std::endl;
   // std::cout << "MATRIX C" << std::endl;
-  // print_matrix(c_p, c_rows, c_cols);
+  print_matrix(c_p, /*c_rows*/ 1, /*c_cols*/ 16);
   std::fill(c_p, c_p + (c_rows * c_cols), 0);
+
 
   start = std::chrono::high_resolution_clock::now();
   tp_gemm(a_p, depth, c_rows, b_p, c_cols, depth, c_p);
@@ -225,8 +98,9 @@ int main() {
   std::cout << std::format("GFLOPS: {} (Transposed)", (flops / 1e9) / duration)
             << std::endl;
   // std::cout << "MATRIX C" << std::endl;
-  // print_matrix(c_p, /*c_rows*/ 1, c_cols);
+  print_matrix(c_p, /*c_rows*/ 1, /*c_cols*/ 16);
   std::fill(c_p, c_p + (c_rows * c_cols), 0);
+
 
   start = std::chrono::high_resolution_clock::now();
   ca_gemm(a_p, b_p, c_p, c_rows, c_cols, depth, 32);
@@ -235,8 +109,9 @@ int main() {
   std::cout << std::format("GFLOPS: {} (Cache Aware)", (flops / 1e9) / duration)
             << std::endl;
   // std::cout << "MATRIX C" << std::endl;
-  // print_matrix(c_p, /*c_rows*/ 1, c_cols);
+  print_matrix(c_p, /*c_rows*/ 1, /*c_cols*/ 16);
   std::fill(c_p, c_p + (c_rows * c_cols), 0);
+
 
   start = std::chrono::high_resolution_clock::now();
   ca_gemm_c(a_p, b_p, c_p, c_rows, c_cols, depth, 128);
@@ -246,8 +121,9 @@ int main() {
                            (flops / 1e9) / duration)
             << std::endl;
   // std::cout << "MATRIX C" << std::endl;
-  // print_matrix(c_p, /*c_rows*/ 1, c_cols);
+  print_matrix(c_p, /*c_rows*/ 1, /*c_cols*/ 16);
   std::fill(c_p, c_p + (c_rows * c_cols), 0);
+
 
   start = std::chrono::high_resolution_clock::now();
   ca_gemm_c2(a_p, b_p, c_p, c_rows, c_cols, depth, 128);
@@ -257,7 +133,7 @@ int main() {
                            (flops / 1e9) / duration)
             << std::endl;
   // std::cout << "MATRIX C" << std::endl;
-  // print_matrix(c_p, /*c_rows*/ 1, c_cols);
+  print_matrix(c_p, /*c_rows*/ 1, /*c_cols*/ 16);
   std::fill(c_p, c_p + (c_rows * c_cols), 0);
 
 #ifdef NEON_GEMM_HPP
@@ -269,7 +145,7 @@ int main() {
   std::cout << std::format("GFLOPS: {} (NEON)", (flops / 1e9) / duration)
             << std::endl;
   // std::cout << "MATRIX C" << std::endl;
-  // print_matrix(c_p, /*c_rows*/ 1, c_cols);
+  print_matrix(c_p, /*c_rows*/ 1, /*c_cols*/ 16);
   std::fill(c_p, c_p + (c_rows * c_cols), 0);
 
 #endif
@@ -281,78 +157,91 @@ int main() {
   std::cout << std::format("GFLOPS: {} (Fortran)", (flops / 1e9) / duration)
             << std::endl;
   // std::cout << "MATRIX C" << std::endl;
-  // print_matrix(c_p, c_rows, c_cols);
+  print_matrix(c_p, /*c_rows*/ 1, /*c_cols*/ 16);
   std::fill(c_p, c_p + (c_rows * c_cols), 0);
 
-  int block_size = 128;
 
+  int block_size = 128; // can only pass pointers to fortran - eye roll.
   start = std::chrono::high_resolution_clock::now();
-  memset(c_p, 0, c_rows * c_cols * sizeof(double));
+
+  // memset(c_p, 0, c_rows * c_cols * sizeof(float));
   ft_ca_gemm(a_p, b_p, c_p, &c_rows, &c_cols, &depth, &block_size);
+  // ^ this implementation is slightly wrong
+
   end = std::chrono::high_resolution_clock::now();
   duration = std::chrono::duration<double>(end - start).count();
   std::cout << std::format("GFLOPS: {} (Fortran Blocked)",
                            (flops / 1e9) / duration)
             << std::endl;
   // std::cout << "MATRIX C" << std::endl;
-  // print_matrix(c_p, c_rows, c_cols);
+  print_matrix(c_p, /*c_rows*/ 1, /*c_cols*/ 16);
   std::fill(c_p, c_p + (c_rows * c_cols), 0);
 
-  // float alpha = 1, beta = 0;
-  // char N = 'N', T = 'T';
 
-  // float *ta = new float[depth * c_rows];
-  // float *tb = new float[c_cols * depth];
+  start = std::chrono::high_resolution_clock::now();
 
-  // // TRANSPOSE A
-  // for (int i = 0; i < c_rows; i++) {
-  //   for (int ii = 0; ii < depth; ii++) {
-  //     ta[(ii * c_rows) + i] = a_p[(i * depth) + ii];
+  //  float alpha = 1.0f; // Scaling factor for A*B
+  //   float beta = 1.0f;  // Scaling factor for C
+
+  cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, dim, dim, dim, 1,
+              &a_p[0], dim, &b_p[0], dim, 1, &c_p[0], dim);
+
+  end = std::chrono::high_resolution_clock::now();
+  duration = std::chrono::duration<double>(end - start).count();
+  std::cout << std::format("GFLOPS: {} (OpenBLAS)", (flops / 1e9) / duration)
+            << std::endl;
+  // std::cout << "MATRIX C" << std::endl;
+  print_matrix(c_p, /*c_rows*/ 1, /*c_cols*/ 16);
+  std::fill(c_p, c_p + (c_rows * c_cols), 0);
+
+
+  // #include <cblas.h>
+  // int M = 2; // Number of rows in A and C
+  //   int N = 2; // Number of columns in B and C
+  //   int K = 2; // Number of columns in A and rows in B
+
+  //   // Define matrices A, B, and C
+  //   float A[2][2] = { {1.0f, 2.0f}, {3.0f, 4.0f} }; // 2x2 matrix
+  //   float B[2][2] = { {2.0f, 3.0f}, {4.0f, 5.0f} }; // 2x2 matrix
+  //   float C[2][2] = { {0.0f, 0.0f}, {0.0f, 0.0f} }; // Result matrix
+  //   initialized to zero
+
+  //   // Set scalar values for the operation
+  //   float alpha = 1.0f; // Scaling factor for A*B
+  //   float beta = 1.0f;  // Scaling factor for C
+
+  //   // Call sgemm: C := alpha * A * B + beta * C
+
+  //   cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
+  //               M, N, K,
+  //               alpha,
+  //               &A[0][0], K,
+  //               &B[0][0], N,
+  //               beta,
+  //               &C[0][0], N);
+
+  //   // Print the result
+  //   std::cout << "Result matrix A:\n";
+  //   for (int i = 0; i < M; ++i) {
+  //       for (int j = 0; j < N; ++j) {
+  //           std::cout << A[i][j] << " ";
+  //       }
+  //       std::cout << "\n";
   //   }
-  // }
-
-  // // TRANSPOSE B
-  // for (int i = 0; i < depth; i++) {
-  //   for (int ii = 0; ii < c_cols; ii++) {
-  //     tb[(ii * depth) + i] = b_p[(i * c_cols) + ii];
+  //   std::cout << "Result matrix B:\n";
+  //   for (int i = 0; i < M; ++i) {
+  //       for (int j = 0; j < N; ++j) {
+  //           std::cout << B[i][j] << " ";
+  //       }
+  //       std::cout << "\n";
   //   }
-  // }
-
-  // start = std::chrono::high_resolution_clock::now();
-  // // sgemm_("N", "T", &c_rows, &c_cols, &depth, &alpha, a_p, &depth, b_p,
-  // // &c_cols,
-  // //        &beta, c_p, &c_cols);
-
-  // // sgemm_("N", "T", &c_rows, &c_cols, &depth, &alpha, a_p, &depth, b_p,
-  // // &c_cols,
-  // //        &beta, c_p, &c_cols);
-
-  // /* THIS BLAS ROUTINE DOESNT MULTIPLY PROPERLY */
-  // /* REFER TO NUMPY GFLOPS INSTEAD */
-
-  // sgemm_(&N, &T, &c_rows, &c_cols, &depth, &alpha, a_p, &c_rows, b_p, &depth,
-  //        &beta, c_p, &c_rows);
-  // end = std::chrono::high_resolution_clock::now();
-  // duration = std::chrono::duration<double>(end - start).count();
-
-  // float *tc = new float[c_rows * c_cols];
-
-  // // TRANSPOSE A
-  // for (int i = 0; i < c_rows; i++) {
-  //   for (int ii = 0; ii < depth; ii++) {
-  //     tc[(ii * c_rows) + i] = c_p[(i * depth) + ii];
+  //   std::cout << "Result matrix C:\n";
+  //   for (int i = 0; i < M; ++i) {
+  //       for (int j = 0; j < N; ++j) {
+  //           std::cout << C[i][j] << " ";
+  //       }
+  //       std::cout << "\n";
   //   }
-  // }
-
-  // // sgemm_(char *transa, char *transb, int *m, int *n, int *k, float *alpha,
-  // // float *a, int *lda, float *b, int *ldb, float *beta, float *c__, int
-  // *ldc)
-
-  // std::cout << std::format("GFLOPS: {} (BLAS)", (flops / 1e9) / duration)
-  //           << std::endl;
-  // // std::cout << "MATRIX C" << std::endl;
-  // // print_matrix(tc, c_rows, c_cols);
-  // std::fill(c_p, c_p + (c_rows * c_cols), 0);
 
   return 0;
 }
